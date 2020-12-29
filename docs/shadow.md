@@ -39,7 +39,7 @@ CodeceptJS provides an option to apply the `customLocatorStrategy` to locate the
 const { locatorStrategy } = require('query-selector-shadow-dom/plugins/webdriverio');
 
 // under WebDriver Helpers Configuration
-WehDriver: {
+WebDriver: {
   ...
   customLocatorStrategy: locatorStrategy
 }

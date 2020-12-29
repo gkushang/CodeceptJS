@@ -873,7 +873,6 @@ I.fillField({css: 'form#login input[name=username]'}, 'John');
 
 This action supports [React locators](https://codecept.io/react#locators)
 
-    {{ custom }}
 
 ### forceClick
 
