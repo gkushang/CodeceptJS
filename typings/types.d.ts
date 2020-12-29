@@ -1,4 +1,181 @@
 declare namespace CodeceptJS {
+    /**
+     * Helper for managing remote data using REST API.
+     * Uses data generators like [rosie](https://github.com/rosiejs/rosie) or factory girl to create new record.
+     *
+     * By defining a factory you set the rules of how data is generated.
+     * This data will be saved on server via REST API and deleted in the end of a test.
+     *
+     * ## Use Case
+     *
+     * Acceptance tests interact with a websites using UI and real browser.
+     * There is no way to create data for a specific test other than from user interface.
+     * That makes tests slow and fragile. Instead of testing a single feature you need to follow all creation/removal process.
+     *
+     * This helper solves this problem.
+     * Most of web application have API, and it can be used to create and delete test records.
+     * By combining REST API with Factories you can easily create records for tests:
+     *
+     * ```js
+     * I.have('user', { login: 'davert', email: 'davert@mail.com' });
+     * let id = await I.have('post', { title: 'My first post'});
+     * I.haveMultiple('comment', 3, {post_id: id});
+     * ```
+     *
+     * To make this work you need
+     *
+     * 1. REST API endpoint which allows to perform create / delete requests and
+     * 2. define data generation rules
+     *
+     * ### Setup
+     *
+     * Install [Rosie](https://github.com/rosiejs/rosie) and [Faker](https://www.npmjs.com/package/faker) libraries.
+     *
+     * ```sh
+     * npm i rosie faker --save-dev
+     * ```
+     *
+     * Create a factory file for a resource.
+     *
+     * See the example for Posts factories:
+     *
+     * ```js
+     * // tests/factories/posts.js
+     *
+     * var Factory = require('rosie').Factory;
+     * var faker = require('faker');
+     *
+     * module.exports = new Factory()
+     *    // no need to set id, it will be set by REST API
+     *    .attr('author', () => faker.name.findName())
+     *    .attr('title', () => faker.lorem.sentence())
+     *    .attr('body', () => faker.lorem.paragraph());
+     * ```
+     * For more options see [rosie documentation](https://github.com/rosiejs/rosie).
+     *
+     * Then configure ApiDataHelper to match factories and REST API:
+     * ### Configuration
+     *
+     * ApiDataFactory has following config options:
+     *
+     * * `endpoint`: base URL for the API to send requests to.
+     * * `cleanup` (default: true): should inserted records be deleted up after tests
+     * * `factories`: list of defined factories
+     * * `returnId` (default: false): return id instead of a complete response when creating items.
+     * * `headers`: list of headers
+     * * `REST`: configuration for REST requests
+     *
+     * See the example:
+     *
+     * ```js
+     *  ApiDataFactory: {
+     *    endpoint: "http://user.com/api",
+     *    cleanup: true,
+     *    headers: {
+     *      'Content-Type': 'application/json',
+     *      'Accept': 'application/json',
+     *    },
+     *    factories: {
+     *      post: {
+     *        uri: "/posts",
+     *        factory: "./factories/post",
+     *      },
+     *      comment: {
+     *        factory: "./factories/comment",
+     *        create: { post: "/comments/create" },
+     *        delete: { post: "/comments/delete/{id}" },
+     *        fetchId: (data) => data.result.id
+     *      }
+     *    }
+     * }
+     * ```
+     * It is required to set REST API `endpoint` which is the baseURL for all API requests.
+     * Factory file is expected to be passed via `factory` option.
+     *
+     * This Helper uses [REST](http://codecept.io/helpers/REST/) helper and accepts its configuration in "REST" section.
+     * For instance, to set timeout you should add:
+     *
+     * ```js
+     * "ApiDataFactory": {
+     *    "REST": {
+     *      "timeout": "100000",
+     *   }
+     * }
+     * ```
+     *
+     * ### Requests
+     *
+     * By default to create a record ApiDataFactory will use endpoint and plural factory name:
+     *
+     * * create: `POST {endpoint}/{resource} data`
+     * * delete: `DELETE {endpoint}/{resource}/id`
+     *
+     * Example (`endpoint`: `http://app.com/api`):
+     *
+     * * create: POST request to `http://app.com/api/users`
+     * * delete: DELETE request to `http://app.com/api/users/1`
+     *
+     * This behavior can be configured with following options:
+     *
+     * * `uri`: set different resource uri. Example: `uri: account` => `http://app.com/api/account`.
+     * * `create`: override create options. Expected format: `{ method: uri }`. Example: `{ "post": "/users/create" }`
+     * * `delete`: override delete options. Expected format: `{ method: uri }`. Example: `{ "post": "/users/delete/{id}" }`
+     *
+     * Requests can also be overridden with a function which returns [axois request config](https://github.com/axios/axios#request-config).
+     *
+     * ```js
+     * create: (data) => ({ method: 'post', url: '/posts', data }),
+     * delete: (id) => ({ method: 'delete', url: '/posts', data: { id } })
+     *
+     * ```
+     *
+     * Requests can be updated on the fly by using `onRequest` function. For instance, you can pass in current session from a cookie.
+     *
+     * ```js
+     *  onRequest: async (request) => {
+     *     // using global codeceptjs instance
+     *     let cookie = await codeceptjs.container.helpers('WebDriver').grabCookie('session');
+     *     request.headers = { Cookie: `session=${cookie.value}` };
+     *   }
+     * ```
+     *
+     * ### Responses
+     *
+     * By default `I.have()` returns a promise with a created data:
+     *
+     * ```js
+     * let client = await I.have('client');
+     * ```
+     *
+     * Ids of created records are collected and used in the end of a test for the cleanup.
+     * If you need to receive `id` instead of full response enable `returnId` in a helper config:
+     *
+     * ```js
+     * // returnId: false
+     * let clientId = await I.have('client');
+     * // clientId == 1
+     *
+     * // returnId: true
+     * let clientId = await I.have('client');
+     * // client == { name: 'John', email: 'john@snow.com' }
+     * ```
+     *
+     * By default `id` property of response is taken. This behavior can be changed by setting `fetchId` function in a factory config.
+     *
+     *
+     * ```js
+     *    factories: {
+     *      post: {
+     *        uri: "/posts",
+     *        factory: "./factories/post",
+     *        fetchId: (data) => data.result.posts[0].id
+     *      }
+     *    }
+     * ```
+     *
+     *
+     * ## Methods
+     */
     class ApiDataFactory {
         /**
          * Generates a new record using factory and saves API request to store it.
@@ -870,6 +1047,19 @@ declare namespace CodeceptJS {
          */
         waitForText(text: string, sec?: number, context?: CodeceptJS.LocatorOrString): void;
     }
+    /**
+     * Helper for testing filesystem.
+     * Can be easily used to check file structures:
+     *
+     * ```js
+     * I.amInPath('test');
+     * I.seeFile('codecept.json');
+     * I.seeInThisFile('FileSystem');
+     * I.dontSeeInThisFile("WebDriverIO");
+     * ```
+     *
+     * ## Methods
+     */
     class FileSystem {
         /**
          * Enters a directory In local filesystem.
@@ -939,8 +1129,41 @@ declare namespace CodeceptJS {
          */
         grabFileNames(): void;
     }
-    function getFileContents(file: string, encoding?: string): string;
-    function isFileExists(file: string, timeout: number): Promise<any>;
+    /**
+     * GraphQL helper allows to send additional requests to a GraphQl endpoint during acceptance tests.
+     * [Axios](https://github.com/axios/axios) library is used to perform requests.
+     *
+     * ## Configuration
+     *
+     * * endpoint: GraphQL base URL
+     * * timeout: timeout for requests in milliseconds. 10000ms by default
+     * * defaultHeaders: a list of default headers
+     * * onRequest: a async function which can update request object.
+     *
+     * ## Example
+     *
+     * ```js
+     * GraphQL: {
+     *    endpoint: 'http://site.com/graphql/',
+     *    onRequest: (request) => {
+     *      request.headers.auth = '123';
+     *    }
+     * }
+     * ```
+     *
+     * ## Access From Helpers
+     *
+     * Send GraphQL requests by accessing `_executeQuery` method:
+     *
+     * ```js
+     * this.helpers['GraphQL']._executeQuery({
+     *    url,
+     *    data,
+     * });
+     * ```
+     *
+     * ## Methods
+     */
     class GraphQL {
         /**
          * Executes query via axios call
@@ -993,6 +1216,150 @@ declare namespace CodeceptJS {
          */
         sendMutation(mutation: string, variables: any, options: any, headers: any): void;
     }
+    /**
+     * Helper for managing remote data using GraphQL queries.
+     * Uses data generators like [rosie](https://github.com/rosiejs/rosie) or factory girl to create new record.
+     *
+     * By defining a factory you set the rules of how data is generated.
+     * This data will be saved on server via GraphQL queries and deleted in the end of a test.
+     *
+     * ## Use Case
+     *
+     * Acceptance tests interact with a websites using UI and real browser.
+     * There is no way to create data for a specific test other than from user interface.
+     * That makes tests slow and fragile. Instead of testing a single feature you need to follow all creation/removal process.
+     *
+     * This helper solves this problem.
+     * If a web application has GraphQL support, it can be used to create and delete test records.
+     * By combining GraphQL with Factories you can easily create records for tests:
+     *
+     * ```js
+     * I.mutateData('createUser', { name: 'davert', email: 'davert@mail.com' });
+     * let user = await I.mutateData('createUser', { name: 'davert'});
+     * I.mutateMultiple('createPost', 3, {post_id: user.id});
+     * ```
+     *
+     * To make this work you need
+     *
+     * 1. GraphQL endpoint which allows to perform create / delete requests and
+     * 2. define data generation rules
+     *
+     * ### Setup
+     *
+     * Install [Rosie](https://github.com/rosiejs/rosie) and [Faker](https://www.npmjs.com/package/faker) libraries.
+     *
+     * ```sh
+     * npm i rosie faker --save-dev
+     * ```
+     *
+     * Create a factory file for a resource.
+     *
+     * See the example for Users factories:
+     *
+     * ```js
+     * // tests/factories/users.js
+     *
+     * var Factory = require('rosie').Factory;
+     * var faker = require('faker');
+     *
+     * // Used with a constructor function passed to Factory, so that the final build
+     * // object matches the necessary pattern to be sent as the variables object.
+     * module.exports = new Factory((buildObj) => ({
+     *    input: { ...buildObj },
+     * }))
+     *    // 'attr'-id can be left out depending on the GraphQl resolvers
+     *    .attr('name', () => faker.name.findName())
+     *    .attr('email', () => faker.interact.email())
+     * ```
+     * For more options see [rosie documentation](https://github.com/rosiejs/rosie).
+     *
+     * Then configure GraphQLDataHelper to match factories and GraphQL schema:
+     * ### Configuration
+     *
+     * GraphQLDataFactory has following config options:
+     *
+     * * `endpoint`: URL for the GraphQL server.
+     * * `cleanup` (default: true): should inserted records be deleted up after tests
+     * * `factories`: list of defined factories
+     * * `headers`: list of headers
+     * * `GraphQL`: configuration for GraphQL requests.
+     *
+     *
+     * See the example:
+     *
+     * ```js
+     *  GraphQLDataFactory: {
+     *    endpoint: "http://user.com/graphql",
+     *    cleanup: true,
+     *    headers: {
+     *      'Content-Type': 'application/json',
+     *      'Accept': 'application/json',
+     *    },
+     *    factories: {
+     *      createUser: {
+     *        query: 'mutation createUser($input: UserInput!) { createUser(input: $input) { id name }}',
+     *        factory: './factories/users',
+     *        revert: (data) => ({
+     *          query: 'mutation deleteUser($id: ID!) { deleteUser(id: $id) }',
+     *          variables: { id : data.id},
+     *        }),
+     *      },
+     *    }
+     * }
+     * ```
+     * It is required to set GraphQL `endpoint` which is the URL to which all the queries go to.
+     * Factory file is expected to be passed via `factory` option.
+     *
+     * This Helper uses [GraphQL](http://codecept.io/helpers/GraphQL/) helper and accepts its configuration in "GraphQL" section.
+     * For instance, to set timeout you should add:
+     *
+     * ```js
+     * "GraphQLDataFactory": {
+     *    "GraphQL": {
+     *      "timeout": "100000",
+     *   }
+     * }
+     * ```
+     *
+     * ### Factory
+     *
+     * Factory contains operations -
+     *
+     * * `operation`: The operation/mutation that needs to be performed for creating a record in the backend.
+     *
+     * Each operation must have the following:
+     *
+     * * `query`: The mutation(query) string. It is expected to use variables to send data with the query.
+     * * `factory`: The path to factory file. The object built by the factory in this file will be passed
+     *    as the 'variables' object to go along with the mutation.
+     * * `revert`: A function called with the data returned when an item is created. The object returned by
+     *    this function is will be used to later delete the items created. So, make sure RELEVANT DATA IS RETURNED
+     *    when a record is created by a mutation.
+     *
+     * ### Requests
+     *
+     * Requests can be updated on the fly by using `onRequest` function. For instance, you can pass in current session from a cookie.
+     *
+     * ```js
+     *  onRequest: async (request) => {
+     *     // using global codeceptjs instance
+     *     let cookie = await codeceptjs.container.helpers('WebDriver').grabCookie('session');
+     *     request.headers = { Cookie: `session=${cookie.value}` };
+     *   }
+     * ```
+     *
+     * ### Responses
+     *
+     * By default `I.mutateData()` returns a promise with created data as specified in operation query string:
+     *
+     * ```js
+     * let client = await I.mutateData('createClient');
+     * ```
+     *
+     * Data of created records are collected and used in the end of a test for the cleanup.
+     *
+     * ## Methods
+     */
     class GraphQLDataFactory {
         /**
          * Generates a new record using factory, sends a GraphQL mutation to store it.
@@ -1033,6 +1400,33 @@ declare namespace CodeceptJS {
          */
         _requestDelete(operation: string, data: any): void;
     }
+    /**
+     * Nightmare helper wraps [Nightmare](https://github.com/segmentio/nightmare) library to provide
+     * fastest headless testing using Electron engine. Unlike Selenium-based drivers this uses
+     * Chromium-based browser with Electron with lots of client side scripts, thus should be less stable and
+     * less trusted.
+     *
+     * Requires `nightmare` package to be installed.
+     *
+     * ## Configuration
+     *
+     * This helper should be configured in codecept.json or codecept.conf.js
+     *
+     * * `url` - base url of website to be tested
+     * * `restart` (optional, default: true) - restart browser between tests.
+     * * `disableScreenshots` (optional, default: false)  - don't save screenshot on failure.
+     * * `uniqueScreenshotNames` (optional, default: false)  - option to prevent screenshot override if you have scenarios with the same name in different suites.
+     * * `fullPageScreenshots` (optional, default: false) - make full page screenshots on failure.
+     * * `keepBrowserState` (optional, default: false)  - keep browser state between tests when `restart` set to false.
+     * * `keepCookies` (optional, default: false)  - keep cookies between tests when `restart` set to false.
+     * * `waitForAction`: (optional) how long to wait after click, doubleClick or PressKey actions in ms. Default: 500.
+     * * `waitForTimeout`: (optional) default wait* timeout in ms. Default: 1000.
+     * * `windowSize`: (optional) default window size. Set a dimension like `640x480`.
+     *
+     * + options from [Nightmare configuration](https://github.com/segmentio/nightmare#api)
+     *
+     * ## Methods
+     */
     class Nightmare {
         /**
          * Get HAR
@@ -1950,6 +2344,162 @@ declare namespace CodeceptJS {
          */
         grabPageScrollPosition(): Promise<PageScrollPosition>;
     }
+    /**
+     * Uses [Playwright](https://github.com/microsoft/playwright) library to run tests inside:
+     *
+     * * Chromium
+     * * Firefox
+     * * Webkit (Safari)
+     *
+     * This helper works with a browser out of the box with no additional tools required to install.
+     *
+     * Requires `playwright` package version ^1 to be installed:
+     *
+     * ```
+     * npm i playwright@^1 --save
+     * ```
+     *
+     * ## Configuration
+     *
+     * This helper should be configured in codecept.json or codecept.conf.js
+     *
+     * * `url`: base url of website to be tested
+     * * `browser`: a browser to test on, either: `chromium`, `firefox`, `webkit`. Default: chromium.
+     * * `show`: (optional, default: false) - show browser window.
+     * * `restart`: (optional, default: true) - restart browser between tests.
+     * * `disableScreenshots`: (optional, default: false)  - don't save screenshot on failure.
+     * * `emulate`: (optional, default: {}) launch browser in device emulation mode.
+     * * `fullPageScreenshots` (optional, default: false) - make full page screenshots on failure.
+     * * `uniqueScreenshotNames`: (optional, default: false)  - option to prevent screenshot override if you have scenarios with the same name in different suites.
+     * * `keepBrowserState`: (optional, default: false) - keep browser state between tests when `restart` is set to false.
+     * * `keepCookies`: (optional, default: false) - keep cookies between tests when `restart` is set to false.
+     * * `waitForAction`: (optional) how long to wait after click, doubleClick or PressKey actions in ms. Default: 100.
+     * * `waitForNavigation`: (optional, default: 'load'). When to consider navigation succeeded. Possible options: `load`, `domcontentloaded`, `networkidle`. Choose one of those options is possible. See [Playwright API](https://github.com/microsoft/playwright/blob/master/docs/api.md#pagewaitfornavigationoptions).
+     * * `pressKeyDelay`: (optional, default: '10'). Delay between key presses in ms. Used when calling Playwrights page.type(...) in fillField/appendField
+     * * `getPageTimeout` (optional, default: '0') config option to set maximum navigation time in milliseconds.
+     * * `waitForTimeout`: (optional) default wait* timeout in ms. Default: 1000.
+     * * `basicAuth`: (optional) the basic authentication to pass to base url. Example: {username: 'username', password: 'password'}
+     * * `windowSize`: (optional) default window size. Set a dimension like `640x480`.
+     * * `userAgent`: (optional) user-agent string.
+     * * `manualStart`: (optional, default: false) - do not start browser before a test, start it manually inside a helper with `this.helpers["Playwright"]._startBrowser()`.
+     * * `chromium`: (optional) pass additional chromium options
+     *
+     * #### Example #1: Wait for 0 network connections.
+     *
+     * ```js
+     * {
+     *    helpers: {
+     *      Playwright : {
+     *        url: "http://localhost",
+     *        restart: false,
+     *        waitForNavigation: "networkidle0",
+     *        waitForAction: 500
+     *      }
+     *    }
+     * }
+     * ```
+     *
+     * #### Example #2: Wait for DOMContentLoaded event
+     *
+     * ```js
+     * {
+     *    helpers: {
+     *      Playwright : {
+     *        url: "http://localhost",
+     *        restart: false,
+     *        waitForNavigation: "domcontentloaded",
+     *        waitForAction: 500
+     *      }
+     *    }
+     * }
+     * ```
+     *
+     * #### Example #3: Debug in window mode
+     *
+     * ```js
+     * {
+     *    helpers: {
+     *      Playwright : {
+     *        url: "http://localhost",
+     *        show: true
+     *      }
+     *    }
+     * }
+     * ```
+     *
+     * #### Example #4: Connect to remote browser by specifying [websocket endpoint](https://chromedevtools.github.io/devtools-protocol/#how-do-i-access-the-browser-target)
+     *
+     * ```js
+     * {
+     *    helpers: {
+     *      Playwright: {
+     *        url: "http://localhost",
+     *        chromium: {
+     *          browserWSEndpoint: "ws://localhost:9222/devtools/browser/c5aa6160-b5bc-4d53-bb49-6ecb36cd2e0a"
+     *        }
+     *      }
+     *    }
+     * }
+     * ```
+     *
+     * #### Example #5: Testing with Chromium extensions
+     *
+     * [official docs](https://github.com/microsoft/playwright/blob/v0.11.0/docs/api.md#working-with-chrome-extensions)
+     *
+     * ```js
+     * {
+     *  helpers: {
+     *    Playwright: {
+     *      url: "http://localhost",
+     *      show: true // headless mode not supported for extensions
+     *      chromium: {
+     *        args: [
+     *           `--disable-extensions-except=${pathToExtension}`,
+     *           `--load-extension=${pathToExtension}`
+     *        ]
+     *      }
+     *    }
+     *  }
+     * }
+     * ```
+     *
+     * #### Example #6: Launch tests emulating iPhone 6
+     *
+     *
+     *
+     * ```js
+     * const { devices } = require('playwright');
+     *
+     * {
+     *  helpers: {
+     *    Playwright: {
+     *      url: "http://localhost",
+     *      emulate: devices['iPhone 6'],
+     *    }
+     *  }
+     * }
+     * ```
+     *
+     * Note: When connecting to remote browser `show` and specific `chrome` options (e.g. `headless` or `devtools`) are ignored.
+     *
+     * ## Access From Helpers
+     *
+     * Receive Playwright client from a custom helper by accessing `browser` for the Browser object or `page` for the current Page object:
+     *
+     * ```js
+     * const { browser } = this.helpers.Playwright;
+     * await browser.pages(); // List of pages in the browser
+     *
+     * // get current page
+     * const { page } = this.helpers.Playwright;
+     * await page.url(); // Get the url of the current page
+     *
+     * const { browserContext } = this.helpers.Playwright;
+     * await browserContext.cookies(); // get current browser context
+     * ```
+     *
+     * ## Methods
+     */
     class Playwright {
         /**
          * Use Playwright API inside a test.
@@ -3326,41 +3876,94 @@ declare namespace CodeceptJS {
         grabElementBoundingRect(locator: LocatorOrString, elementSize?: string): Promise<DOMRect> | Promise<number>;
     }
     /**
-     * This helper works the same as MockRequest helper. It has been included for backwards compatibility
-     * reasons. So use MockRequest helper instead of this.
+     * Protractor helper is based on [Protractor library](http://www.protractortest.org) and used for testing web applications.
      *
-     * Please refer to MockRequest helper documentation for details.
-     *
-     * ### Installations
-     *
-     * Requires [Polly.js](https://netflix.github.io/pollyjs/#/) library by Netflix installed
-     *
-     * ```
-     * npm i @pollyjs/core @pollyjs/adapter-puppeteer --save-dev
-     * ```
-     *
-     * Requires Puppeteer helper or WebDriver helper enabled
+     * Protractor requires [Selenium Server and ChromeDriver/GeckoDriver to be installed](http://codecept.io/quickstart/#prepare-selenium-server).
+     * To test non-Angular applications please make sure you have `angular: false` in configuration file.
      *
      * ### Configuration
      *
-     * Just enable helper in config file:
+     * This helper should be configured in codecept.json or codecept.conf.js
      *
-     * ```js
-     * helpers: {
-     *    Puppeteer: {
-     *      // regular Puppeteer config here
-     *    },
-     *    Polly: {}
+     * * `url` - base url of website to be tested
+     * * `browser` - browser in which perform testing
+     * * `angular` (optional, default: true): disable this option to run tests for non-Angular applications.
+     * * `driver` - which protractor driver to use (local, direct, session, hosted, sauce, browserstack). By default set to 'hosted' which requires selenium server to be started.
+     * * `restart` (optional, default: true) - restart browser between tests.
+     * * `smartWait`: (optional) **enables [SmartWait](http://codecept.io/acceptance/#smartwait)**; wait for additional milliseconds for element to appear. Enable for 5 secs: "smartWait": 5000
+     * * `disableScreenshots` (optional, default: false)  - don't save screenshot on failure
+     * * `fullPageScreenshots` (optional, default: false) - make full page screenshots on failure.
+     * * `uniqueScreenshotNames` (optional, default: false)  - option to prevent screenshot override if you have scenarios with the same name in different suites
+     * * `keepBrowserState` (optional, default: false)  - keep browser state between tests when `restart` set to false.
+     * * `seleniumAddress` - Selenium address to connect (default: http://localhost:4444/wd/hub)
+     * * `rootElement` - Root element of AngularJS application (default: body)
+     * * `getPageTimeout` (optional) sets default timeout for a page to be loaded. 10000 by default.
+     * * `waitForTimeout`: (optional) sets default wait time in _ms_ for all `wait*` functions. 1000 by default.
+     * * `scriptsTimeout`: (optional) timeout in milliseconds for each script run on the browser, 10000 by default.
+     * * `windowSize`: (optional) default window size. Set to `maximize` or a dimension in the format `640x480`.
+     * * `manualStart` (optional, default: false) - do not start browser before a test, start it manually inside a helper with `this.helpers.WebDriver._startBrowser()`
+     * * `capabilities`: {} - list of [Desired Capabilities](https://github.com/SeleniumHQ/selenium/wiki/DesiredCapabilities)
+     * * `proxy`: set proxy settings
+     *
+     * other options are the same as in [Protractor config](https://github.com/angular/protractor/blob/master/docs/referenceConf.js).
+     *
+     * #### Sample Config
+     *
+     * ```json
+     * {
+     *    "helpers": {
+     *      "Protractor" : {
+     *        "url": "http://localhost",
+     *        "browser": "chrome",
+     *        "smartWait": 5000,
+     *        "restart": false
+     *      }
+     *    }
      * }
      * ```
-     * The same can be done when using WebDriver helper..
      *
-     * ### Usage
+     * #### Config for Non-Angular application:
      *
-     * Use `I.mockRequest` to intercept and mock requests.
+     * ```json
+     * {
+     *    "helpers": {
+     *      "Protractor" : {
+     *        "url": "http://localhost",
+     *        "browser": "chrome",
+     *        "angular": false
+     *      }
+     *    }
+     * }
+     * ```
+     *
+     * #### Config for Headless Chrome
+     *
+     * ```json
+     * {
+     *    "helpers": {
+     *      "Protractor" : {
+     *        "url": "http://localhost",
+     *        "browser": "chrome",
+     *        "capabilities": {
+     *          "chromeOptions": {
+     *            "args": [ "--headless", "--disable-gpu", "--no-sandbox" ]
+     *          }
+     *        }
+     *      }
+     *    }
+     * }
+     * ```
+     *
+     * ## Access From Helpers
+     *
+     * Receive a WebDriverIO client from a custom helper by accessing `browser` property:
+     *
+     * ```js
+     * this.helpers['Protractor'].browser
+     * ```
+     *
+     * ## Methods
      */
-    class Polly {
-    }
     class Protractor {
         /**
          * Use [Protractor](https://www.protractortest.org/#/api) API inside a test.
@@ -4536,6 +5139,130 @@ declare namespace CodeceptJS {
          */
         setCookie(cookie: Cookie | Cookie[]): void;
     }
+    /**
+     * Uses [Google Chrome's Puppeteer](https://github.com/GoogleChrome/puppeteer) library to run tests inside headless Chrome.
+     * Browser control is executed via DevTools Protocol (instead of Selenium).
+     * This helper works with a browser out of the box with no additional tools required to install.
+     *
+     * Requires `puppeteer` package to be installed.
+     *
+     * > Experimental Firefox support [can be activated](https://codecept.io/helpers/Puppeteer-firefox).
+     *
+     * ## Configuration
+     *
+     * This helper should be configured in codecept.json or codecept.conf.js
+     *
+     * * `url`: base url of website to be tested
+     * * `basicAuth`: (optional) the basic authentication to pass to base url. Example: {username: 'username', password: 'password'}
+     * * `show`: (optional, default: false) - show Google Chrome window for debug.
+     * * `restart`: (optional, default: true) - restart browser between tests.
+     * * `disableScreenshots`: (optional, default: false)  - don't save screenshot on failure.
+     * * `fullPageScreenshots` (optional, default: false) - make full page screenshots on failure.
+     * * `uniqueScreenshotNames`: (optional, default: false)  - option to prevent screenshot override if you have scenarios with the same name in different suites.
+     * * `keepBrowserState`: (optional, default: false) - keep browser state between tests when `restart` is set to false.
+     * * `keepCookies`: (optional, default: false) - keep cookies between tests when `restart` is set to false.
+     * * `waitForAction`: (optional) how long to wait after click, doubleClick or PressKey actions in ms. Default: 100.
+     * * `waitForNavigation`: (optional, default: 'load'). When to consider navigation succeeded. Possible options: `load`, `domcontentloaded`, `networkidle0`, `networkidle2`. See [Puppeteer API](https://github.com/GoogleChrome/puppeteer/blob/master/docs/api.md#pagewaitfornavigationoptions). Array values are accepted as well.
+     * * `pressKeyDelay`: (optional, default: '10'). Delay between key presses in ms. Used when calling Puppeteers page.type(...) in fillField/appendField
+     * * `getPageTimeout` (optional, default: '30000') config option to set maximum navigation time in milliseconds. If the timeout is set to 0, then timeout will be disabled.
+     * * `waitForTimeout`: (optional) default wait* timeout in ms. Default: 1000.
+     * * `windowSize`: (optional) default window size. Set a dimension like `640x480`.
+     * * `userAgent`: (optional) user-agent string.
+     * * `manualStart`: (optional, default: false) - do not start browser before a test, start it manually inside a helper with `this.helpers["Puppeteer"]._startBrowser()`.
+     * * `browser`: (optional, default: chrome) - can be changed to `firefox` when using [puppeteer-firefox](https://codecept.io/helpers/Puppeteer-firefox).
+     * * `chrome`: (optional) pass additional [Puppeteer run options](https://github.com/GoogleChrome/puppeteer/blob/master/docs/api.md#puppeteerlaunchoptions).
+     *
+     *
+     * #### Example #1: Wait for 0 network connections.
+     *
+     * ```js
+     * {
+     *    helpers: {
+     *      Puppeteer : {
+     *        url: "http://localhost",
+     *        restart: false,
+     *        waitForNavigation: "networkidle0",
+     *        waitForAction: 500
+     *      }
+     *    }
+     * }
+     * ```
+     *
+     * #### Example #2: Wait for DOMContentLoaded event and 0 network connections
+     *
+     * ```js
+     * {
+     *    helpers: {
+     *      Puppeteer : {
+     *        url: "http://localhost",
+     *        restart: false,
+     *        waitForNavigation: [ "domcontentloaded", "networkidle0" ],
+     *        waitForAction: 500
+     *      }
+     *    }
+     * }
+     * ```
+     *
+     * #### Example #3: Debug in window mode
+     *
+     * ```js
+     * {
+     *    helpers: {
+     *      Puppeteer : {
+     *        url: "http://localhost",
+     *        show: true
+     *      }
+     *    }
+     * }
+     * ```
+     *
+     * #### Example #4: Connect to remote browser by specifying [websocket endpoint](https://chromedevtools.github.io/devtools-protocol/#how-do-i-access-the-browser-target)
+     *
+     * ```js
+     * {
+     *    helpers: {
+     *      Puppeteer: {
+     *        url: "http://localhost",
+     *        chrome: {
+     *          browserWSEndpoint: "ws://localhost:9222/devtools/browser/c5aa6160-b5bc-4d53-bb49-6ecb36cd2e0a"
+     *        }
+     *      }
+     *    }
+     * }
+     * ```
+     *
+     * #### Example #5: Target URL with provided basic authentication
+     *
+     * ```js
+     * {
+     *    helpers: {
+     *      Puppeteer : {
+     *        url: 'http://localhost',
+     *        basicAuth: {username: 'username', password: 'password'},
+     *        show: true
+     *      }
+     *    }
+     * }
+     * ```
+     *
+     *
+     *
+     * Note: When connecting to remote browser `show` and specific `chrome` options (e.g. `headless` or `devtools`) are ignored.
+     *
+     * ## Access From Helpers
+     *
+     * Receive Puppeteer client from a custom helper by accessing `browser` for the Browser object or `page` for the current Page object:
+     *
+     * ```js
+     * const { browser } = this.helpers.Puppeteer;
+     * await browser.pages(); // List of pages in the browser
+     *
+     * const { page } = this.helpers.Puppeteer;
+     * await page.url(); // Get the url of the current page
+     * ```
+     *
+     * ## Methods
+     */
     class Puppeteer {
         /**
          * Use Puppeteer API inside a test.
@@ -6017,6 +6744,45 @@ declare namespace CodeceptJS {
          */
         grabElementBoundingRect(locator: LocatorOrString, elementSize?: string): Promise<DOMRect> | Promise<number>;
     }
+    /**
+     * REST helper allows to send additional requests to the REST API during acceptance tests.
+     * [Axios](https://github.com/axios/axios) library is used to perform requests.
+     *
+     * ## Configuration
+     *
+     * * endpoint: API base URL
+     * * timeout: timeout for requests in milliseconds. 10000ms by default
+     * * defaultHeaders: a list of default headers
+     * * onRequest: a async function which can update request object.
+     * * maxUploadFileSize: set the max content file size in MB when performing api calls.
+     *
+     * ## Example
+     *
+     * ```js
+     * {
+     *   helpers: {
+     *     REST: {
+     *       endpoint: 'http://site.com/api',
+     *       onRequest: (request) => {
+     *       request.headers.auth = '123';
+     *     }
+     *   }
+     * }
+     * ```
+     *
+     * ## Access From Helpers
+     *
+     * Send REST requests by accessing `_executeRequest` method:
+     *
+     * ```js
+     * this.helpers['REST']._executeRequest({
+     *    url,
+     *    data,
+     * });
+     * ```
+     *
+     * ## Methods
+     */
     class REST {
         /**
          * Executes axios request
@@ -6083,12 +6849,77 @@ declare namespace CodeceptJS {
          */
         sendDeleteRequest(url: any, headers?: any): void;
     }
-    class SeleniumWebdriver {
-    }
     /**
      * Client Functions
      */
     function getPageUrl(): void;
+    /**
+     * Uses [TestCafe](https://github.com/DevExpress/testcafe) library to run cross-browser tests.
+     * The browser version you want to use in tests must be installed on your system.
+     *
+     * Requires `testcafe` package to be installed.
+     *
+     * ```
+     * npm i testcafe --save-dev
+     * ```
+     *
+     * ## Configuration
+     *
+     * This helper should be configured in codecept.json or codecept.conf.js
+     *
+     * * `url`: base url of website to be tested
+     * * `show`: (optional, default: false) - show browser window.
+     * * `windowSize`: (optional) - set browser window width and height
+     * * `getPageTimeout` (optional, default: '30000') config option to set maximum navigation time in milliseconds.
+     * * `waitForTimeout`: (optional) default wait* timeout in ms. Default: 5000.
+     * * `browser`: (optional, default: chrome)  - See https://devexpress.github.io/testcafe/documentation/using-testcafe/common-concepts/browsers/browser-support.html
+     *
+     *
+     * #### Example #1: Show chrome browser window
+     *
+     * ```js
+     * {
+     *    helpers: {
+     *      TestCafe : {
+     *        url: "http://localhost",
+     *        waitForTimeout: 15000,
+     *        show: true,
+     *        browser: "chrome"
+     *      }
+     *    }
+     * }
+     * ```
+     *
+     *  To use remote device you can provide 'remote' as browser parameter this will display a link with QR Code
+     *  See https://devexpress.github.io/testcafe/documentation/recipes/test-on-remote-computers-and-mobile-devices.html
+     *  #### Example #2: Remote browser connection
+     *
+     * ```js
+     * {
+     *    helpers: {
+     *      TestCafe : {
+     *        url: "http://localhost",
+     *        waitForTimeout: 15000,
+     *        browser: "remote"
+     *      }
+     *    }
+     * }
+     * ```
+     *
+     * ## Access From Helpers
+     *
+     * Call Testcafe methods directly using the testcafe controller.
+     *
+     * ```js
+     * const testcafeTestController = this.helpers['TestCafe'].t;
+     * const comboBox = Selector('.combo-box');
+     * await testcafeTestController
+     *   .hover(comboBox) // hover over combo box
+     *   .click('#i-prefer-both') // click some other element
+     * ```
+     *
+     * ## Methods
+     */
     class TestCafe {
         /**
          * Use [TestCafe](https://devexpress.github.io/testcafe/documentation/test-api/) API inside a test.
@@ -6912,6 +7743,349 @@ declare namespace CodeceptJS {
          */
         waitForText(text: string, sec?: number, context?: CodeceptJS.LocatorOrString): void;
     }
+    /**
+     * WebDriver helper which wraps [webdriverio](http://webdriver.io/) library to
+     * manipulate browser using Selenium WebDriver or PhantomJS.
+     *
+     * WebDriver requires Selenium Server and ChromeDriver/GeckoDriver to be installed. Those tools can be easily installed via NPM. Please check [Testing with WebDriver](https://codecept.io/webdriver/#testing-with-webdriver) for more details.
+     *
+     * ### Configuration
+     *
+     * This helper should be configured in codecept.json or codecept.conf.js
+     *
+     * * `url`: base url of website to be tested.
+     * * `basicAuth`: (optional) the basic authentication to pass to base url. Example: {username: 'username', password: 'password'}
+     * * `browser`: browser in which to perform testing.
+     * * `host`: (optional, default: localhost) - WebDriver host to connect.
+     * * `port`: (optional, default: 4444) - WebDriver port to connect.
+     * * `protocol`: (optional, default: http) - protocol for WebDriver server.
+     * * `path`: (optional, default: /wd/hub) - path to WebDriver server,
+     * * `restart`: (optional, default: true) - restart browser between tests.
+     * * `smartWait`: (optional) **enables [SmartWait](http://codecept.io/acceptance/#smartwait)**; wait for additional milliseconds for element to appear. Enable for 5 secs: "smartWait": 5000.
+     * * `disableScreenshots`: (optional, default: false) - don't save screenshots on failure.
+     * * `fullPageScreenshots` (optional, default: false) - make full page screenshots on failure.
+     * * `uniqueScreenshotNames`: (optional, default: false) - option to prevent screenshot override if you have scenarios with the same name in different suites.
+     * * `keepBrowserState`: (optional, default: false) - keep browser state between tests when `restart` is set to false.
+     * * `keepCookies`: (optional, default: false) - keep cookies between tests when `restart` set to false.
+     * * `windowSize`: (optional) default window size. Set to `maximize` or a dimension in the format `640x480`.
+     * * `waitForTimeout`: (optional, default: 1000) sets default wait time in *ms* for all `wait*` functions.
+     * * `desiredCapabilities`: Selenium's [desired
+     * capabilities](https://github.com/SeleniumHQ/selenium/wiki/DesiredCapabilities).
+     * * `manualStart`: (optional, default: false) - do not start browser before a test, start it manually inside a helper
+     * with `this.helpers["WebDriver"]._startBrowser()`.
+     * * `timeouts`: [WebDriver timeouts](http://webdriver.io/docs/timeouts.html) defined as hash.
+     *
+     * Example:
+     *
+     * ```js
+     * {
+     *    helpers: {
+     *      WebDriver : {
+     *        smartWait: 5000,
+     *        browser: "chrome",
+     *        restart: false,
+     *        windowSize: "maximize",
+     *        timeouts: {
+     *          "script": 60000,
+     *          "page load": 10000
+     *        }
+     *      }
+     *    }
+     * }
+     * ```
+     *
+     * Example with basic authentication
+     * ```js
+     * {
+     *    helpers: {
+     *      WebDriver : {
+     *        smartWait: 5000,
+     *        browser: "chrome",
+     *        basicAuth: {username: 'username', password: 'password'},
+     *        restart: false,
+     *        windowSize: "maximize",
+     *        timeouts: {
+     *          "script": 60000,
+     *          "page load": 10000
+     *        }
+     *      }
+     *    }
+     * }
+     * ```
+     *
+     * Additional configuration params can be used from [webdriverio
+     * website](http://webdriver.io/guide/getstarted/configuration.html).
+     *
+     * ### Headless Chrome
+     *
+     * ```js
+     * {
+     *    helpers: {
+     *      WebDriver : {
+     *        url: "http://localhost",
+     *        browser: "chrome",
+     *        desiredCapabilities: {
+     *          chromeOptions: {
+     *            args: [ "--headless", "--disable-gpu", "--no-sandbox" ]
+     *          }
+     *        }
+     *      }
+     *    }
+     * }
+     * ```
+     *
+     * ### Internet Explorer
+     *
+     * Additional configuration params can be used from [IE options](https://seleniumhq.github.io/selenium/docs/api/rb/Selenium/WebDriver/IE/Options.html)
+     *
+     * ```js
+     * {
+     *    helpers: {
+     *      WebDriver : {
+     *        url: "http://localhost",
+     *        browser: "internet explorer",
+     *        desiredCapabilities: {
+     *          ieOptions: {
+     *            "ie.browserCommandLineSwitches": "-private",
+     *            "ie.usePerProcessProxy": true,
+     *            "ie.ensureCleanSession": true,
+     *          }
+     *        }
+     *      }
+     *    }
+     * }
+     * ```
+     *
+     * ### Selenoid Options
+     *
+     * [Selenoid](https://aerokube.com/selenoid/latest/) is a modern way to run Selenium inside Docker containers.
+     * Selenoid is easy to set up and provides more features than original Selenium Server. Use `selenoidOptions` to set Selenoid capabilities
+     *
+     * ```js
+     * {
+     *    helpers: {
+     *      WebDriver : {
+     *        url: "http://localhost",
+     *        browser: "chrome",
+     *        desiredCapabilities: {
+     *          selenoidOptions: {
+     *            enableVNC: true,
+     *          }
+     *        }
+     *      }
+     *    }
+     * }
+     * ```
+     *
+     * ### Connect Through proxy
+     *
+     * CodeceptJS also provides flexible options when you want to execute tests to Selenium servers through proxy. You will
+     * need to update the `helpers.WebDriver.capabilities.proxy` key.
+     *
+     * ```js
+     * {
+     *     helpers: {
+     *         WebDriver: {
+     *             capabilities: {
+     *                 proxy: {
+     *                     "proxyType": "manual|pac",
+     *                     "proxyAutoconfigUrl": "URL TO PAC FILE",
+     *                     "httpProxy": "PROXY SERVER",
+     *                     "sslProxy": "PROXY SERVER",
+     *                     "ftpProxy": "PROXY SERVER",
+     *                     "socksProxy": "PROXY SERVER",
+     *                     "socksUsername": "USERNAME",
+     *                     "socksPassword": "PASSWORD",
+     *                     "noProxy": "BYPASS ADDRESSES"
+     *                 }
+     *             }
+     *         }
+     *     }
+     * }
+     * ```
+     * For example,
+     *
+     * ```js
+     * {
+     *     helpers: {
+     *         WebDriver: {
+     *             capabilities: {
+     *                 proxy: {
+     *                     "proxyType": "manual",
+     *                     "httpProxy": "http://corporate.proxy:8080",
+     *                     "socksUsername": "codeceptjs",
+     *                     "socksPassword": "secret",
+     *                     "noProxy": "127.0.0.1,localhost"
+     *                 }
+     *             }
+     *         }
+     *     }
+     * }
+     * ```
+     *
+     * Please refer to [Selenium - Proxy Object](https://github.com/SeleniumHQ/selenium/wiki/DesiredCapabilities) for more
+     * information.
+     *
+     * ### Cloud Providers
+     *
+     * WebDriver makes it possible to execute tests against services like `Sauce Labs` `BrowserStack` `TestingBot`
+     * Check out their documentation on [available parameters](http://webdriver.io/guide/usage/cloudservices.html)
+     *
+     * Connecting to `BrowserStack` and `Sauce Labs` is simple. All you need to do
+     * is set the `user` and `key` parameters. WebDriver automatically know which
+     * service provider to connect to.
+     *
+     * ```js
+     * {
+     *     helpers:{
+     *         WebDriver: {
+     *             url: "YOUR_DESIRED_HOST",
+     *             user: "YOUR_BROWSERSTACK_USER",
+     *             key: "YOUR_BROWSERSTACK_KEY",
+     *             capabilities: {
+     *                 "browserName": "chrome",
+     *
+     *                 // only set this if you're using BrowserStackLocal to test a local domain
+     *                 // "browserstack.local": true,
+     *
+     *                 // set this option to tell browserstack to provide addition debugging info
+     *                 // "browserstack.debug": true,
+     *             }
+     *         }
+     *     }
+     * }
+     * ```
+     *
+     * #### SauceLabs
+     *
+     * SauceLabs can be configured via wdio service, which should be installed additionally:
+     *
+     * ```
+     * npm i @wdio/sauce-service --save
+     * ```
+     *
+     * It is important to make sure it is compatible with current webdriverio version.
+     *
+     * Enable `wdio` plugin in plugins list and add `sauce` service:
+     *
+     * ```js
+     * plugins: {
+     *    wdio: {
+     *       enabled: true,
+     *        services: ['sauce'],
+     *        user: ... ,// saucelabs username
+     *        key: ... // saucelabs api key
+     *        // additional config, from sauce service
+     *    }
+     * }
+     * ```
+     *
+     * See [complete reference on webdriver.io](https://webdriver.io/docs/sauce-service.html).
+     *
+     * > Alternatively, use [codeceptjs-saucehelper](https://github.com/puneet0191/codeceptjs-saucehelper/) for better reporting.
+     *
+     * #### BrowserStack
+     *
+     * BrowserStack can be configured via wdio service, which should be installed additionally:
+     *
+     * ```
+     * npm i @wdio/browserstack-service --save
+     * ```
+     *
+     * It is important to make sure it is compatible with current webdriverio version.
+     *
+     * Enable `wdio` plugin in plugins list and add `browserstack` service:
+     *
+     * ```js
+     * plugins: {
+     *    wdio: {
+     *       enabled: true,
+     *        services: ['browserstack'],
+     *        user: ... ,// browserstack username
+     *        key: ... // browserstack api key
+     *        // additional config, from browserstack service
+     *    }
+     * }
+     * ```
+     *
+     * See [complete reference on webdriver.io](https://webdriver.io/docs/browserstack-service.html).
+     *
+     * > Alternatively, use [codeceptjs-bshelper](https://github.com/PeterNgTr/codeceptjs-bshelper) for better reporting.
+     *
+     * #### TestingBot
+     *
+     * > **Recommended**: use official [TestingBot Helper](https://github.com/testingbot/codeceptjs-tbhelper).
+     *
+     * Alternatively, TestingBot can be configured via wdio service, which should be installed additionally:
+     *
+     * ```
+     * npm i @wdio/testingbot-service --save
+     * ```
+     *
+     * It is important to make sure it is compatible with current webdriverio version.
+     *
+     * Enable `wdio` plugin in plugins list and add `testingbot` service:
+     *
+     * ```js
+     * plugins: {
+     *   wdio: {
+     *       enabled: true,
+     *       services: ['testingbot'],
+     *       user: ... ,// testingbot key
+     *       key: ... // testingbot secret
+     *       // additional config, from testingbot service
+     *   }
+     * }
+     * ```
+     *
+     * See [complete reference on webdriver.io](https://webdriver.io/docs/testingbot-service.html).
+     *
+     * #### Applitools
+     *
+     * Visual testing via Applitools service
+     *
+     * > Use [CodeceptJS Applitools Helper](https://github.com/PeterNgTr/codeceptjs-applitoolshelper) with Applitools wdio service.
+     *
+     *
+     * ### Multiremote Capabilities
+     *
+     * This is a work in progress but you can control two browsers at a time right out of the box.
+     * Individual control is something that is planned for a later version.
+     *
+     * Here is the [webdriverio docs](http://webdriver.io/guide/usage/multiremote.html) on the subject
+     *
+     * ```js
+     * {
+     *     helpers: {
+     *         WebDriver: {
+     *             "multiremote": {
+     *                 "MyChrome": {
+     *                     "desiredCapabilities": {
+     *                         "browserName": "chrome"
+     *                      }
+     *                 },
+     *                 "MyFirefox": {
+     *                    "desiredCapabilities": {
+     *                        "browserName": "firefox"
+     *                    }
+     *                 }
+     *             }
+     *         }
+     *     }
+     * }
+     * ```
+     *
+     * ## Access From Helpers
+     *
+     * Receive a WebDriver client from a custom helper by accessing `browser` property:
+     *
+     * ```js
+     * const { WebDriver } = this.helpers;
+     * const browser = WebDriver.browser
+     * ```
+     *
+     * ## Methods
+     */
     class WebDriver {
         /**
          * Use [webdriverio](https://webdriver.io/docs/api.html) API inside a test.
@@ -7141,6 +8315,7 @@ declare namespace CodeceptJS {
          * @param value - text value to fill.
          *
          * {{ react }}
+         * {{ custom }}
          */
         fillField(field: CodeceptJS.LocatorOrString, value: string): void;
         /**
@@ -8567,7 +9742,7 @@ declare namespace CodeceptJS {
             before: 'workers.before';
             after: 'workers.after';
         };
-        function emit(event: string, param: any): void;
+        function emit(event: string, param?: any): void;
         /**
          * for testing only!
          */
@@ -8693,6 +9868,15 @@ declare namespace CodeceptJS {
     class Locator {
         constructor(locator: CodeceptJS.LocatorOrString, defaultType?: string);
         toString(): string;
+        isFuzzy(): boolean;
+        isShadow(): boolean;
+        isFrame(): boolean;
+        isCSS(): boolean;
+        isNull(): boolean;
+        isXPath(): boolean;
+        isCustom(): boolean;
+        isStrict(): boolean;
+        isAccessibilityId(): boolean;
         toXPath(): string;
         or(locator: CodeceptJS.LocatorOrString): Locator;
         find(locator: CodeceptJS.LocatorOrString): Locator;
@@ -8702,7 +9886,7 @@ declare namespace CodeceptJS {
         first(): Locator;
         last(): Locator;
         withText(text: string): Locator;
-        withAttr(attrs: {
+        withAttr(attributes: {
             [key: string]: string;
         }): Locator;
         as(output: string): Locator;
@@ -8710,13 +9894,21 @@ declare namespace CodeceptJS {
         after(locator: CodeceptJS.LocatorOrString): Locator;
         before(locator: CodeceptJS.LocatorOrString): Locator;
         static build(locator: CodeceptJS.LocatorOrString): Locator;
+        /**
+         * Filters to modify locators
+         */
+        static filters: any;
+        /**
+         * Appends new `Locator` filter to an `Locator.filters` array, and returns the new length of the array.
+         */
+        static addFilter(): void;
     }
     namespace output {
         var stepShift: number;
         /**
          * Set or return current verbosity level
          */
-        function level(level: number): number;
+        function level(level?: number): number;
         /**
          * Print information for a process
          * Used in multiple-run
@@ -8738,7 +9930,10 @@ declare namespace CodeceptJS {
          * Print a successful message
          */
         function success(msg: string): void;
-        function plugin(name: string, msg: string): void;
+        /**
+         * Prints plugin message
+         */
+        function plugin(pluginName: string, msg: string): void;
         /**
          * Print a step
          */
@@ -8792,7 +9987,8 @@ declare namespace CodeceptJS {
         /**
          * Adds a promise to a chain.
          * Promise description should be passed as first parameter.
-         * @param [retry = true] - true: it will retries if `retryOpts` set.
+         * @param [retry] - undefined: `add(fn)` -> `false` and `add('step',fn)` -> `true`
+         *     true: it will retries if `retryOpts` set.
          *     false: ignore `retryOpts` and won't retry.
          */
         add(taskName: string | ((...params: any[]) => any), fn?: (...params: any[]) => any, force?: boolean, retry?: boolean): Promise<any> | undefined;
@@ -8837,6 +10033,10 @@ declare namespace CodeceptJS {
     function session(sessionName: CodeceptJS.LocatorOrString, config: ((...params: any[]) => any) | {
         [key: string]: any;
     }, fn?: (...params: any[]) => any): Promise<any> | undefined;
+    /**
+     * Each command in test executed through `I.` object is wrapped in Step.
+     * Step allows logging executed commands and triggers hook before and after step execution.
+     */
     class Step {
         constructor(helper: CodeceptJS.Helper, name: string);
         actor: string;
@@ -8893,6 +10093,68 @@ declare namespace CodeceptJS {
      */
     const todo: CodeceptJS.IScenario;
     function within(context: CodeceptJS.LocatorOrString, fn: (...params: any[]) => any): Promise<any> | undefined;
+    /**
+     * This is a wrapper on top of [Detox](https://github.com/wix/Detox) library, aimied to unify testing experience for CodeceptJS framework.
+     * Detox provides a grey box testing for mobile applications, playing especially good for React Native apps.
+     *
+     * Detox plays quite differently from Appium. To establish detox testing you need to build a mobile application in a special way to inject Detox code.
+     * This why **Detox is grey box testing** solution, so you need an access to application source code, and a way to build and execute it on emulator.
+     *
+     * Comparing to Appium, Detox runs faster and more stable but requires an additional setup for build.
+     *
+     * ### Setup
+     *
+     * 1. [Install and configure Detox for iOS](https://github.com/wix/Detox/blob/master/docs/Introduction.GettingStarted.md) and [Android](https://github.com/wix/Detox/blob/master/docs/Introduction.Android.md)
+     * 2. [Build an application](https://github.com/wix/Detox/blob/master/docs/Introduction.GettingStarted.md#step-4-build-your-app-and-run-detox-tests) using `detox build` command.
+     * 3. Install [CodeceptJS](https://codecept.io) and detox-helper:
+     *
+     * ```
+     * npm i @codeceptjs/detox-helper --save
+     * ```
+     *
+     * Detox configuration is required in `package.json` under `detox` section.
+     *
+     * If you completed step 1 and step 2 you should have a configuration similar this:
+     *
+     * ```js
+     *  "detox": {
+     *    "configurations": {
+     *      "ios.sim.debug": {
+     *        "binaryPath": "ios/build/Build/Products/Debug-iphonesimulator/example.app",
+     *        "build": "xcodebuild -project ios/example.xcodeproj -scheme example -configuration Debug -sdk iphonesimulator -derivedDataPath ios/build",
+     *        "type": "ios.simulator",
+     *        "name": "iPhone 7"
+     *      }
+     *    }
+     *  }
+     * ```
+     *
+     *
+     * ### Configuration
+     *
+     * Besides Detox configuration, CodeceptJS should also be configured to use Detox.
+     *
+     * In `codecept.conf.js` enable Detox helper:
+     *
+     * ```js
+     * helpers: {
+     *    Detox: {
+     *      require: '@codeceptjs/detox-helper',
+     *      configuration: '<detox-configuration-name>',
+     *    }
+     * }
+     *
+     * ```
+     *
+     * It's important to specify a package name under `require` section and current detox configuration taken from `package.json`.
+     *
+     * Options:
+     *
+     * * `configuration` - a detox configuration name. Required.
+     * * `reloadReactNative` - should be enabled for React Native applications.
+     * * `reuse` - reuse application for tests. By default, Detox reinstalls and relaunches app.
+     * * `registerGlobals` - (default: true) Register Detox helper functions `by`, `element`, `expect`, `waitFor` globally.
+     */
     class Detox {
         /**
          * Saves a screenshot to the output dir
