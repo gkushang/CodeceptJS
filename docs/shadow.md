@@ -32,7 +32,7 @@ This uses custom elements, `my-app`, `recipe-hello`, `recipe-hello-binding` and 
 
 ### Option 1: Use the [query-selector-shadow-dom](https://github.com/Georgegriff/query-selector-shadow-dom) plugin
 
-CodeceptJS provides an option to apply the `customLocatorStrategy` to locate the Shadow Doms at ease. The above plugin pierce Shadow DOM roots without knowing the path through nested shadow roots. To use the above plugin,
+CodeceptJS provides an option to apply the `customLocatorStrategy` to locate the Shadow Doms at ease. The query-selector-shadow-dom plugin pierce Shadow DOM roots without knowing the path through nested shadow roots. To use the plugin, define the `customLocatorStrategy` as shown below, and use the `custom` type locators in the tests,
 
 ```js
 // in codecept.conf.js

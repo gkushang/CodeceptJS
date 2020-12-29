@@ -41,7 +41,7 @@ This helper should be configured in codecept.json or codecept.conf.js
 -   `manualStart`:  - do not start browser before a test, start it manually inside a helper
     with `this.helpers["WebDriver"]._startBrowser()`.
 -   `timeouts`: [WebDriver timeouts][5] defined as hash.
--   `customLocatorStrategy`: (optional) define custom locator strategy as a function for the `custom` locators
+-   `customLocatorStrategy`: (optional) define custom locator strategy as a function for the [custom][35] locators.
 
 Example:
 
@@ -361,7 +361,7 @@ Check if locator is type of "Shadow"
 
 -   `locator` **[object][18]** 
 
-### _isCustomLocators
+### _isCustomLocator
 
 Check if locator is type of "custom"
 
