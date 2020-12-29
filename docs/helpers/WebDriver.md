@@ -41,7 +41,7 @@ This helper should be configured in codecept.json or codecept.conf.js
 -   `manualStart`:  - do not start browser before a test, start it manually inside a helper
     with `this.helpers["WebDriver"]._startBrowser()`.
 -   `timeouts`: [WebDriver timeouts][5] defined as hash.
--   `customLocatorStrategy`: (optional) define custom locator strategy as a function for the [custom][35] locators.
+-   `customLocatorStrategy`: (optional) define custom locator strategy as a function for the `custom` type locators.
 
 Example:
 
@@ -2259,5 +2259,3 @@ I.waitUrlEquals('http://127.0.0.1:8000/info');
 [33]: https://code.google.com/p/selenium/wiki/JsonWireProtocol#Cookie_JSON_Object
 
 [34]: https://webdriver.io/docs/api.html
-
-[35]: https://webdriver.io/docs/api/browser/custom$.html
