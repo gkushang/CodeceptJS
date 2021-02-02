@@ -297,6 +297,7 @@ codeceptjs.locator.addFilter((providedLocator, locatorObj) => {
 ```
 New locator strategy is ready to use:
 
+
 ```js
 I.click('=Login');
 ```
