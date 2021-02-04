@@ -1172,6 +1172,72 @@ describe('WebDriver', function () {
   });
 });
 
+describe('customLocatorStrategies', function () {
+  this.retries(1);
+  this.timeout(35000);
+
+  before(() => {
+    global.codecept_dir = path.join(__dirname, '/../data');
+    try {
+      fs.unlinkSync(dataFile);
+    } catch (err) {
+      // continue regardless of error
+    }
+
+    wd = new WebDriver({
+      url: siteUrl,
+      browser: 'chrome',
+      windowSize: '500x700',
+      smartWait: 0, // just to try
+      host: TestHelper.seleniumHost(),
+      port: TestHelper.seleniumPort(),
+      waitForTimeout: 5000,
+      capabilities: {
+        chromeOptions: {
+          args: ['--headless', '--disable-gpu', '--window-size=1280,1024'],
+        },
+      },
+      customLocatorStrategies: {
+        customSelector: (selector) => document.querySelector(selector),
+      },
+    });
+  });
+  beforeEach(async () => {
+    webApiTests.init({ I: wd, siteUrl });
+    await wd._before();
+  });
+
+  afterEach(() => wd._after());
+  it('should wait for input text field to be enabled', async () => {
+    await wd.amOnPage('/form/wait_enabled');
+    await wd.waitForEnabled({ customSelector: '#text' }, 2);
+    await wd.fillField({ customSelector: '#text' }, 'hello world');
+    await wd.seeInField({ customSelector: '#text' }, 'hello world');
+  });
+
+  it('should wait for a button to be enabled and click', async () => {
+    await wd.amOnPage('/form/wait_enabled');
+    await wd.waitForEnabled({ customSelector: '#text' }, 2);
+    await wd.click({ customSelector: '#button' });
+    await wd.see('button was clicked');
+  });
+
+  it('can mix between custom locators and string locators', async () => {
+    await wd.amOnPage('/form/wait_enabled');
+    await wd.waitForEnabled({ customSelector: '#text' }, 2);
+    await wd.click('#button');
+    await wd.see('button was clicked');
+  });
+
+  it('throws on invalid custom selector', async () => {
+    try {
+      await wd.waitForEnabled({ madeUpSelector: '#text' }, 2);
+    } catch (e) {
+      expect(e.message).to.include('Custom Locator Strategy isn\'t defined or is not a function');
+    }
+  });
+});
+
 describe('WebDriver - Basic Authentication', () => {
   before(() => {
     global.codecept_dir = path.join(__dirname, '/../data');

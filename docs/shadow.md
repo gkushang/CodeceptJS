@@ -32,7 +32,7 @@ This uses custom elements, `my-app`, `recipe-hello`, `recipe-hello-binding` and 
 
 ### Option 1: Use the [query-selector-shadow-dom](https://github.com/Georgegriff/query-selector-shadow-dom) plugin
 
-CodeceptJS provides an option to apply the `customLocatorStrategy` to locate the Shadow Doms at ease. The query-selector-shadow-dom plugin pierce Shadow DOM roots without knowing the path through nested shadow roots. To use the plugin, define the `customLocatorStrategy` as shown below, and use the `custom` type locators in the tests,
+CodeceptJS provides an option to apply the `customLocatorStrategies` to locate the Shadow Doms at ease. The query-selector-shadow-dom plugin pierce Shadow DOM roots without knowing the path through nested shadow roots. To use the plugin, define the `customLocatorStrategies` as shown below, and use the name of your strategy  e.g. `custom` in the tests,
 
 ```js
 // in codecept.conf.js
@@ -41,7 +41,9 @@ const { locatorStrategy } = require('query-selector-shadow-dom/plugins/webdriver
 // under WebDriver Helpers Configuration
 WebDriver: {
   ...
-  customLocatorStrategy: locatorStrategy
+  customLocatorStrategies: {
+    custom: locatorStrategy
+  }
 }
 ```
 
@@ -49,6 +51,32 @@ To locate the Shadow DOM in above HTML,
 
 ```js
 I.click({custom: '.primary-button'});
+```
+
+If you want to provide another type of locator, give it another name.
+
+```js
+// in codecept.conf.js
+const { locatorStrategy } = require('query-selector-shadow-dom/plugins/webdriverio');
+
+const myStrat = (selector) => {
+  return document.querySelectorAll(selector)
+}
+
+// under WebDriver Helpers Configuration
+WebDriver: {
+  ...
+  customLocatorStrategies: {
+    custom: locatorStrategy,
+    myStrat: myStrat
+  }
+}
+```
+
+To locate the Shadow DOM in above HTML,
+
+```js
+I.click({myStrat: '.primary-button'});
 ```
 
 The Complete Example is available at [webcomponents-playwright-webdriver-example](https://github.com/salesforce/codeceptjs-bdd/tree/develop/examples/webcomponents-playwright-webdriver-example).
