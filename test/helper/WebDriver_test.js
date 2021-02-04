@@ -1219,7 +1219,7 @@ describe('customLocatorStrategies', function () {
     await wd.amOnPage('/form/wait_enabled');
     await wd.waitForEnabled({ customSelector: '#text' }, 2);
     await wd.click({ customSelector: '#button' });
-    await wd.see('button was clicked');
+    await wd.see('button was clicked', { customSelector: '#message' });
   });
 
   it('can mix between custom locators and string locators', async () => {
