@@ -327,4 +327,4 @@ WebDriver: {
 I.click({custom: 'my-shadow-element-unique-css'})
 ```
 
-> For more details on locator object see [Locator](https://github.com/codeceptjs/CodeceptJS/blob/master /lib/locator.js) class implementation.
+> For more details on locator object see [Locator](https://github.com/codeceptjs/CodeceptJS/blob/master/lib/locator.js) class implementation.
