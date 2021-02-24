@@ -55,7 +55,9 @@ declare namespace CodeceptJS {
     | { react: string }
     | { custom: string };
 
-  type LocatorOrString = string | ILocator | Locator;
+  interface CustomLocators { }
+  type LocatorOrString = string | ILocator | Locator | CustomLocators[keyof CustomLocators];
+
   type StringOrSecret = string | CodeceptJS.Secret;
 
   interface HookCallback {
