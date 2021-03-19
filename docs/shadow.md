@@ -104,7 +104,6 @@ For example, to fill value in `input` field or to click the `Click Me!` button, 
 I.fillField({ shadow: ['my-app', 'recipe-hello-binding', 'ui-input', 'input.input'] }, 'value');
 I.click({ shadow: ['my-app', 'recipe-hello', 'button'] });
 ```
-
 ## Example
 
 ```js
