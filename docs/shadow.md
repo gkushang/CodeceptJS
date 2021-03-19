@@ -86,6 +86,7 @@ I.click({myStrat: '.primary-button'});
 The Complete Example is available at [webcomponents-playwright-webdriver-example](https://github.com/salesforce/codeceptjs-bdd/tree/develop/examples/webcomponents-playwright-webdriver-example).
 
 
+
 ### Option 2: Use the `shadow` locators
 
 TL;DR: This requires the DOM Hierarchy 
