@@ -35,6 +35,10 @@ This uses custom elements, `my-app`, `recipe-hello`, `recipe-hello-binding` and 
 CodeceptJS provides an option to apply the `customLocatorStrategies` to locate the Shadow Doms at ease. The query-selector-shadow-dom plugin pierce Shadow DOM roots without knowing the path through nested shadow roots. To use the plugin, define the `customLocatorStrategies` as shown below, and use the name of your strategy  e.g. `custom` in the tests,
 
 ```js
+npm i query-selector-shadow-dom
+```
+
+```js
 // in codecept.conf.js
 const { locatorStrategy } = require('query-selector-shadow-dom/plugins/webdriverio');
 
@@ -82,6 +86,8 @@ I.click({myStrat: '.primary-button'});
 The Complete Example is available at [webcomponents-playwright-webdriver-example](https://github.com/salesforce/codeceptjs-bdd/tree/develop/examples/webcomponents-playwright-webdriver-example).
 
 ### Option 2: Use the `shadow` locators
+
+TL;DR: This requires the DOM Hierarchy 
 
 For Web Components or [Salesforce's Lighting Web Components](https://github.com/salesforce/lwc) with Shadow DOM's, a special `shadow` locator is available. It allows to select an element by its shadow dom sequences and sequences are defined as an Array of `elements`. Elements defined in the array of `elements` must be in the ordered the shadow elements appear in the DOM.
 
